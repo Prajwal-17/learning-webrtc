@@ -1,46 +1,20 @@
 import { useEffect, useState } from "react";
 
-const Sender = () => {
+export const Sender = () => {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [pc, setPc] = useState<RTCPeerConnection | null>(null);
 
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:8080");
-    setSocket(ws);
-
     ws.onopen = () => {
-      console.log("WebSocket connected");
       ws.send(JSON.stringify({ type: "sender" }));
     };
+    setSocket(ws);
+  }, []);
 
-    ws.onmessage = async (event) => {
-      const message = JSON.parse(event.data);
-      console.log("Sender got message:", message);
-
-      if (!pc) return;
-
-      if (message.type === "createAnswer") {
-        await pc.setRemoteDescription(new RTCSessionDescription(message.sdp));
-      } else if (message.type === "iceCandidate") {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
-        } catch (err) {
-          console.error("Error adding received ice candidate", err);
-        }
-      }
-    };
-
-    return () => {
-      ws.close();
-      if (pc) {
-        pc.close();
-      }
-    };
-  }, [pc]);
-
-  const createConnection = async () => {
+  const startSendingVideo = async () => {
     if (!socket) {
-      alert("No socket connection");
+      alert("NO Socket");
       return;
     }
 
@@ -50,48 +24,54 @@ const Sender = () => {
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         socket.send(
-          JSON.stringify({
-            type: "iceCandidate",
-            candidate: event.candidate,
-          })
+          JSON.stringify({ type: "iceCandidate", candidate: event.candidate })
         );
       }
     };
 
-    peerConnection.onnegotiationneeded = async () => {
-      try {
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        socket.send(
-          JSON.stringify({
-            type: "createOffer",
-            sdp: peerConnection.localDescription,
-          })
-        );
-      } catch (err) {
-        console.error("Error during negotiation:", err);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true,
+    });
+
+    stream
+      .getTracks()
+      .forEach((track) => peerConnection.addTrack(track, stream));
+
+    const localVideo = document.createElement("video");
+    localVideo.srcObject = stream;
+    localVideo.autoplay = true;
+    localVideo.muted = true;
+    localVideo.playsInline = true;
+    localVideo.style.width = "300px";
+    document.body.appendChild(localVideo);
+
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+
+    socket.send(
+      JSON.stringify({
+        type: "createOffer",
+        sdp: peerConnection.localDescription,
+      })
+    );
+
+    socket.onmessage = async (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === "createAnswer") {
+        await peerConnection.setRemoteDescription(message.sdp);
+      } else if (message.type === "iceCandidate") {
+        await peerConnection.addIceCandidate(message.candidate);
       }
     };
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-      stream.getTracks().forEach((track) => {
-        peerConnection.addTrack(track, stream);
-      });
-    } catch (err) {
-      console.error("Error accessing media devices.", err);
-    }
   };
 
   return (
-    <>
-      <div>Sender</div>
-      <button onClick={createConnection}>Connect</button>
-    </>
+    <button
+      onClick={startSendingVideo}
+      className="rounded-lg p-3 bg-black text-white hover:bg-gray-900 mx-2"
+    >
+      Start Streaming
+    </button>
   );
 };
-
-export default Sender;

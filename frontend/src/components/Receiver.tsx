@@ -8,6 +8,7 @@ export const Receiver = () => {
   );
 
   useEffect(() => {
+    // connect to socket server for signaling
     const ws = new WebSocket("ws://localhost:8080");
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: "receiver" }));
@@ -26,10 +27,11 @@ export const Receiver = () => {
     ws.onmessage = async (event) => {
       const message = JSON.parse(event.data);
       if (message.type === "createOffer") {
-        // Create peer connection only when offer is received
+        // Create peer connection only when offer is received else creates a peerConnection before the offer is received
         const peerConnection = new RTCPeerConnection();
         setPc(peerConnection);
 
+        // always add stream tracks before send and offer/answer, else the sdp is empty and ice connection does not happen
         peerConnection.ontrack = (event) => {
           if (event.streams.length > 0) {
             video.srcObject = event.streams[0];
